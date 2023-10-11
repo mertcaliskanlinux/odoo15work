@@ -23,7 +23,7 @@ class Appointment(models.Model):
     sale_order_line_ids = fields.One2many('sale.order.line', 'order_id', string="Sale Order Line")
     sale_order_count = fields.Integer(string="Sale Orders", compute="_compute_sale_order_count")
     invoice_count = fields.Integer(string="Invoices", compute="_compute_invoice_count")
-
+    payment_count = fields.Integer(string="Payments", compute="_compute_payment_count")
 
     @api.depends('patient')
     def _compute_patient_full_name(self):
@@ -41,9 +41,8 @@ class Appointment(models.Model):
 
     @api.depends('sale_order_line_ids.order_id')
     def _compute_sale_order_count(self):
-        for rec in self:
-            rec.sale_order_count = len(rec.sale_order_line_ids.mapped('order_id'))
-
+        for appointment in self:
+            appointment.sale_order_count = len(appointment.sale_order_line_ids.mapped('order_id'))
 
     def action_done(self):
         self.write({'stage': 'done'})
@@ -59,6 +58,8 @@ class Appointment(models.Model):
             raise exceptions.ValidationError("You cannot delete a done appointment")
         return super(Appointment, self).unlink()
 
+
+
     @api.model
     def create(self, vals):
         if vals.get('code', 'New') == 'New':
@@ -72,14 +73,103 @@ class Appointment(models.Model):
                 raise exceptions.ValidationError('The Code must be unique.')
 
     def action_sale_order(self):
-        action = {
-            'name': 'Sale Orders',
-            'type': 'ir.actions.act_window',
-            'res_model': 'sale.order',
-            'view_mode': 'tree,form',
-            'target': 'current',
-        }
-        return action
+        for appointment in self:
+            # Müşteri (customer) kaydı oluşturun (örnek olarak)
+
+            patient_name = appointment.patient.full_name if appointment.patient else ''
+            customer_values = {
+                'name': f"{patient_name}",
+                # Diğer gerekli müşteri bilgilerini burada ekleyin
+            }
+            customer = self.env['res.partner'].create(customer_values)
+
+            sale_order_values = {
+                'partner_id': customer.id, # Müşteri (customer) kaydının ID'sini kullanın
+                'date_order': appointment.appointment_date_time,
+                'note': 'Appointment Patient: %s' % customer.name, # Not olarak müşteri adını ekleyin
+                # Diğer gerekli bilgileri burada ekleyin
+            }
+
+            sale_order = self.env['sale.order'].create(sale_order_values)
+
+            # Sale Order formunu açın
+            self.env.context = dict(self.env.context, default_sale_order_id=sale_order.id)
+            return {
+                'name': 'Sale Order',
+                'type': 'ir.actions.act_window',
+                'res_model': 'sale.order',
+                'res_id': sale_order.id,
+                'view_mode': 'form',
+                'target': 'current',
+            }
+
+    def action_invoice(self):
+        for appointment in self:
+            invoice_values = {
+                'partner_id': appointment.patient_id.id,
+                # 'date_order': appointment.appointment_date_time,
+            }
+            print("Sale Order Oluşturuldu")
+
+            invoice = self.env['account.move'].create(invoice_values)
+
+            # Faturayı düzenleme
+            self.env.context = dict(self.env.context, default_invoice_id=invoice.id)
+            return {
+                'name': 'Sale Order',
+                'type': 'ir.actions.act_window',
+                'res_model': 'account.move',
+                'res_id': invoice.id,
+                'view_mode': 'form',
+                'target': 'current',
+            }
+
+
+
+
+    # def action_payment(self):
+    #     for appointment in self:
+    #         payment_values = {
+    #             'partner_id': appointment.patient.id,
+    #             'date_order': appointment.appointment_date_time,
+    #         }
+    #         print("Payment Oluşturuldu")
+    #
+    #         payment = self.env['account.payment'].create(payment_values)
+    #
+    #         # Ödeme düzenleme
+    #         self.env.context = dict(self.env.context, default_payment_id=payment.id)
+    #         return {
+    #             'name': 'Payment',
+    #             'type': 'ir.actions.act_window',
+    #             'res_model': 'account.payment',
+    #             'res_id': payment.id,
+    #             'view_mode': 'form',
+    #             'target': 'current',
+    #         }
+
+    def action_invoice(self):
+        for appointment in self:
+            invoice_values = {
+                'partner_id': appointment.patient.id,
+                'date_order': appointment.appointment_date_time,
+            }
+            print("Sale Order Oluşturuldu")
+
+            invoice = self.env['account.move'].create(invoice_values)
+
+            # Faturayı düzenleme
+            self.env.context = dict(self.env.context, default_invoice_id=invoice.id)
+            return {
+                'name': 'Sale Order',
+                'type': 'ir.actions.act_window',
+                'res_model': 'account.move',
+                'res_id': invoice.id,
+                'view_mode': 'form',
+                'target': 'current',
+            }
+
+
 
     @api.depends('sale_order_line_ids')
     def _compute_total_amount(self):
@@ -105,3 +195,5 @@ class Appointment(models.Model):
         for rec in self:
             rec.invoice_count = len(
                 rec.sale_order_line_ids.filtered(lambda line: line.invoice_status == 'invoiced'))
+
+

@@ -25,5 +25,3 @@ class Department(models.Model):
                 record.code = record.name
             else:
                 record.code = ''
-
-
